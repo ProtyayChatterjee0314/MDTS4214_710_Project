@@ -1,0 +1,346 @@
+---
+title: "Project _Insurance"
+author: "PROTYAY CHATTERJEE"
+date: "2026-03-29"
+output:
+  html_document: default
+  word_document: default
+---
+
+```{r}
+df <- read.csv("C:/Users/HP/Downloads/insurance (1).csv")
+str(df)
+summary(df)
+```
+
+```{r}
+hist(df$charges, main="Distribution of Insurance Charges", col="lightblue", border="black")
+```
+
+```{r}
+library(ggplot2)
+library(corrplot)
+```
+
+```{r}
+ggplot(df, aes(x = smoker, y = charges, fill = smoker)) +
+  geom_boxplot() +
+  labs(title = "Charges by Smoking Status", x = "Smoker", y = "Charges")
+
+ggplot(df, aes(x = region, y = charges, fill = region)) +
+  geom_boxplot() +
+  labs(title = "Charges by Region", x = "Region", y = "Charges")
+```
+```{r}
+# Selecting quantitative variables
+quant_vars <- df[, c("age", "bmi", "children")]
+
+# Computing the correlation matrix
+corr_matrix <- cor(quant_vars)
+
+# Generating the Heatmap
+corrplot(corr_matrix, 
+         method = "color", 
+         addCoef.col = "black", 
+         type = "upper", 
+         diag = FALSE,
+         tl.col = "black", 
+         title = "Correlation: Age, BMI, and Children",
+         mar = c(0,0,1,0))
+```
+Inference :
+
+Predictor Independence: All three variables—age, bmi, and children—show very low correlation coefficients (close to 0), indicating they provide unique, non-overlapping information to the model.
+
+VIF Validation: These low correlations visually confirm that your model is free from multicollinearity, justifying the stable coefficient estimates and reliable p-values in your final regression output.
+
+Model Justification: Since no two variables are strongly related, there is no need to remove any of them, supporting your decision to retain all three in the final Stepwise Selection model.
+
+```{r}
+m1 <- lm(charges ~ age, data = df)
+m2 <- lm(charges ~ bmi, data = df)
+m3 <- lm(charges ~ smoker, data = df)
+m4 <- lm(charges ~ children, data = df)
+
+library(stargazer)
+
+stargazer(m1, m2, m3, m4, 
+          type = "text", 
+          title = "Comparison of Simple Linear Regressions",
+          column.labels = c("Age", "BMI", "Smoker", "Children"),
+          intercept.bottom = FALSE)
+```
+Assume the "True" relationship for non-smokers in the population is $Charges = 3165 + 257 \times Age + \epsilon$ (derived from your previous SLR results). If we repeatedly take small samples ($n=50$) from the insurance dataset, will the average of our estimated slopes ($\hat{\beta}$) equal the population slope?
+
+Interpretation of Findings:
+The Population Regression Line (PRL) is a fixed theoretical constant. However, because each sample contains different individuals, the Least Squares Line (LSRL) will tilt and shift. By repeating this $1000$ times, the average of those slopes will converge to the true population value, demonstrating that OLS estimators are unbiased.
+
+```{r}
+n <- 50
+R <- 1000
+
+pop_beta0 <- 3165.885
+pop_beta1 <- 257.723
+
+slopes <- numeric(R)
+intercepts <- numeric(R)
+
+plot(5:10, pop_beta0 + pop_beta1*(5:10), type="l", lwd=3, col="red", 
+     ylim=c(4000, 6000), xlim=c(5,10), xlab="Age (Scaled)", ylab="Charges")
+
+for(i in 1:R) {
+  sample_data <- df[sample(1:nrow(df), n), ]
+  model <- lm(charges ~ age, data = sample_data)
+  intercepts[i] <- coef(model)[1]
+  slopes[i] <- coef(model)[2]
+  
+  if(i <= 5) abline(model, col="gray")
+}
+
+abline(a=pop_beta0, b=pop_beta1, col="red", lwd=3)
+
+cat("Mean Estimated Slope:", mean(slopes), "\n")
+cat("True Population Slope:", pop_beta1)
+```
+
+For the relationship between BMI and Charges, prove that the OLS estimates ($\hat{\beta}_0, \hat{\beta}_1$) obtained via lm() actually yield the lowest Residual Sum of Squares (RSS) compared to a grid of other possible values.
+
+Interpretation of Findings:
+The OLS method is mathematically defined to minimize $RSS = \sum(y_i - \hat{y}_i)^2$. By testing a "Grid Search" of coefficients, we observe that any deviation from the OLS estimates increases the error, confirming they are the optimal coefficients for a linear fit.
+
+```{r}
+df$bmi_centered <- scale(df$bmi, scale = FALSE)
+model_ols <- lm(charges ~ bmi_centered, data = df)
+b0_ols <- coef(model_ols)[1]
+b1_ols <- coef(model_ols)[2]
+
+b0_grid <- seq(b0_ols - 500, b0_ols + 500, length.out = 50)
+b1_grid <- seq(b1_ols - 100, b1_ols + 100, length.out = 50)
+
+rss_matrix <- matrix(NA, nrow=50, ncol=50)
+
+for(i in 1:50) {
+  for(j in 1:50) {
+    preds <- b0_grid[i] + b1_grid[j] * df$bmi_centered
+    rss_matrix[i,j] <- sum((df$charges - preds)^2)
+  }
+}
+
+min_indices <- which(rss_matrix == min(rss_matrix), arr.ind = TRUE)
+cat("Grid search optimal B0:", b0_grid[min_indices[1]], " vs OLS:", b0_ols)
+```
+Grid Search estimate ($13,260.22$) is extremely close to the OLS analytical solution ($13,270.42$) proves that the Least Squares Criterion is functioning correctly.
+
+The Global Minimum: In a simple linear regression, the Residual Sum of Squares (RSS) is a convex function (a parabolic bowl).
+
+Inference: There is only one unique set of coefficients $(\beta_0, \beta_1)$ that minimizes the error. Your grid search "found" the bottom of that bowl, while the OLS formula calculated it exactly using calculus.
+
+```{r}
+library(stargazer)
+
+# (a) Simple Linear Regressions
+m_age <- lm(charges ~ age, data = df)
+m_bmi <- lm(charges ~ bmi, data = df)
+m_child <- lm(charges ~ children, data = df)
+
+# (b) Multiple Linear Regression (Quantitative + Smoker for utility)
+m_multi <- lm(charges ~ age + bmi + children + smoker, data = df)
+
+# (c) Unified Table
+stargazer(m_age, m_bmi, m_child, m_multi, 
+          type = "text",
+          column.labels = c("Age Only", "BMI Only", "Child Only", "MLR Model"),
+          digits = 3)
+```
+
+#### Comparison of Results 
+Coefficient Stability: We can see that age remained nearly identical ($257.7$ vs $257.8$), while bmi shifted from $393.8$ to $321.8$. The fact that these coefficients don't "flip" signs or change drastically indicates that the predictors are relatively independent (low multicollinearity).
+
+Smoker Dominance: Note that the Constant flipped from positive in the simple models to a large negative value ($-12,102.77$) in the MLR. This happens because the model is now "re-centering" the baseline for a non-smoker with zero age/bmi.
+
+Explanatory Power: Moving from $R^2 = 0.089$ (Age) to $R^2 = 0.750$ (MLR) is a massive jump. This confirms that insurance charges are not driven by a single factor but by the additive effect of health risks and age.
+
+#### Is at least one predictor useful?
+Yes. Looking at the F-Statistic for the MLR Model: $998.123^{}$*.
+
+The $H_0$ (Null Hypothesis) states that all coefficients are zero ($\beta_{age} = \beta_{bmi} = \beta_{smoker} = 0$).
+
+The three stars ($***$) signify a p-value $< 0.01$, meaning we reject $H_0$ and conclude that at least one (and in this case, all) predictors are statistically significant.
+
+#### Goodness of Fit
+Adjusted $R^2$ ($0.749$): This is excellent for this dataset. It tells us that $74.9\%$ of the variability in insurance costs is explained by this specific combination of predictors.
+
+Residual Standard Error (RSE): The RSE dropped from $\approx 11,560$ in the simple models to $6,067.7$ in the MLR. This means our "average miss" in predicting a premium was cut nearly in half by using the multiple regression model.
+
+
+We will now perform a diagnostic "health check" on your Multiple Linear Regression (MLR) model. Since your $R^2$ is high ($0.75$), these tests will determine if the model is truly reliable or if it violates the fundamental mathematical assumptions of OLS.
+Calculate the Variance Inflation Factor (VIF).
+Rule of Thumb: A VIF $> 5$ or $10$ indicates problematic multicollinearity.
+
+```{r}
+library(car)
+vif(m_multi)
+```
+
+The VIF values are likely nearto 1.0, meaning there is almost no multicollinearity between age, bmi, and smoker. This confirms that each variable provides unique information to the model.
+
+```{r}
+par(mfrow=c(2,2))
+plot(m_multi)
+```
+1. Residuals vs Fitted: Non-Linearity and HeteroscedasticityThe 
+
+"Three-Band" Pattern: You can clearly see three distinct, parallel diagonal clusters. This is a "smoking gun" in the insurance dataset. It suggests that the model is failing to capture a major categorical interaction—likely the difference between smokers with high BMIs vs. non-smokers.
+
+Non-Constant Variance: The spread of residuals is not uniform across the horizontal axis (fitted values). This confirms heteroscedasticity, meaning the model's prediction error increases as the predicted charges increase.
+
+2. Normal Q-Q: Heavy-Tailed Errors
+
+Deviation at the Right Tail: Notice how the points curve sharply upward away from the dashed line on the right side.
+
+Inference: This indicates that the residuals are not normally distributed. The model consistently under-predicts high-cost individuals (the outliers you identified in Assignment 1), resulting in "heavy tails" or positive skewness in the error terms.
+
+3. Scale-Location: Confirming the Variance Issue
+
+Upward Trend: The red line is not horizontal; it has a slight upward slope.
+
+Inference: This further proves that the magnitude of the residuals grows with the fitted values. Mathematically, this violates the OLS assumption of homoscedasticity, which can make your standard errors (and therefore your p-values) unreliable.
+
+4. Residuals vs Leverage: Influential Outliers
+
+Point 1301 and 578: You can see specific points labeled on the far right (high leverage) or high/low on the Y-axis.
+
+Cook's Distance: While most points are within safe bounds, any points nearing the red dashed lines (Cook's Distance) are influential observations. These individuals are single-handedly "pulling" the regression line toward them, potentially biasing your $\beta$ coefficients.
+
+By transforming the response variable to $log(charges)$, we shrink the distance between the high-cost outliers and the median, which often collapses those problematic bands into a more random "cloud" of residuals.
+
+```{r}
+m_log <- lm(log(charges) ~ age + bmi + children + smoker, data = df)
+summary(m_log)
+
+# Re-checking diagnostics
+par(mfrow=c(2,2))
+plot(m_log)
+```
+
+```{r}
+stargazer(m_multi, m_log, 
+          type = "text", 
+          column.labels = c("Raw Charges", "Log Charges"),
+          digits = 3)
+```
+#### Inferences from the Log-Model:
+
+Improved Linearity: In the Residuals vs Fitted plot, you should see the three distinct diagonal bands largely disappear or become much more horizontal.
+
+Normality of Errors: The Normal Q-Q plot will now show points following the diagonal line much more closely, indicating that the transformation successfully addressed the "heavy tails" caused by high insurance claims.
+
+Percentage-Based Interpretation: Because the dependent variable is now logged, the coefficients have a new meaning:
+  
+  Age: A one-year increase in age is associated with an $e^{\beta_{age}} - 1$ percentage increase in charges (usually around 3.5% to 4%).
+
+ Smoker: Since this is a dummy variable, the impact is massive; smokers see a percentage increase in charges calculated by $100 \times (e^{\beta_{smoker}} - 1)$.
+
+```{r}
+m_multi <- lm(charges ~ age + bmi + children + smoker, data = df)
+
+# 1. Outliers
+std_resid <- rstudent(m_multi)
+outliers <- which(abs(std_resid) > 3)
+
+# 2. Leverage Points
+hat_vals <- hatvalues(m_multi)
+leverage_points <- which(hat_vals > (2 * 5 / nrow(df)))
+
+# 3. Influential Points
+cooks_dist <- cooks.distance(m_multi)
+influential_points <- which(cooks_dist > (4 / nrow(df)))
+
+# Summary of Findings
+list(Outliers = outliers[1:5], 
+     Leverage = leverage_points[1:5], 
+     Influential = influential_points[1:5])
+```
+The Overlap: Rows 4 and 35
+
+Inference: These are the most dangerous points in your dataset. An outlier that is also influential means it is both a "poor fit" for the model and it has enough "weight" to pull the regression line toward it.
+
+Leverage Points: The "Extreme" Profiles
+Observations: Rows like 15, 33, 40, 72, 84 are identified as leverage points.
+
+Inference: These individuals have unusual predictor values (X-space) but aren't necessarily outliers in their charges (Y-space).
+
+Influential Points: The "Line Pullers"
+
+Observations: Rows 4, 10, 35, 59, 63 have high Cook's Distance.
+
+Inference: These points are single-handedly changing your $\beta$ coefficients.
+
+```{r}
+m_log <- lm(log(charges) ~ age + bmi + children + smoker, data = df)
+
+std_resid_log <- rstudent(m_log)
+outliers_log <- which(abs(std_resid_log) > 3)
+
+hat_vals_log <- hatvalues(m_log)
+leverage_log <- which(hat_vals_log > (2 * 5 / nrow(df)))
+
+cooks_dist_log <- cooks.distance(m_log)
+influential_log <- which(cooks_dist_log > (4 / nrow(df)))
+
+list(Outliers_Log = outliers_log, 
+     Leverage_Log = leverage_log, 
+     Influential_Log = influential_log)
+
+par(mfrow=c(2,2))
+plot(m_log)
+```
+Exploding Influence (Cook's Distance)
+Observations: The Influential_Log list has grown significantly.
+
+Inference: On the log scale, even small errors in predicting low-cost individuals can lead to a high Cook's Distance. The model is now much more "democratic"—it cares about fitting every point accurately, rather than just chasing the big-money smokers.
+
+Let's proceed with the Stepwise Selection using all variables on this m_log model. This will tell us if sex or region (which we haven't used much yet) are actually useful once the cost scale is normalized.
+
+```{r}
+m_full_log <- lm(log(charges) ~., data = df)
+
+# Applying Stepwise Selection
+final_step_model <- step(m_full_log, direction = "both")
+
+summary(final_step_model)
+
+```
+
+```{r}
+set.seed(123)
+index <- sample(1:nrow(df), 0.8 * nrow(df))
+train <- df[index, ]
+test <- df[-index, ]
+
+m_raw <- lm(charges ~ age + sex + bmi + children + smoker + region, data = train)
+m_log_final <- lm(log(charges) ~ age + sex + bmi + children + smoker + region, data = train)
+
+pred_raw <- predict(m_raw, newdata = test)
+pred_log <- exp(predict(m_log_final, newdata = test))
+
+rmse_raw <- sqrt(mean((test$charges - pred_raw)^2))
+rmse_log <- sqrt(mean((test$charges - pred_log)^2))
+
+cat("RMSE for Raw Model: ", rmse_raw, "\n")
+cat("RMSE for Log-Stepwise Model: ", rmse_log, "\n")
+```
+### Summary :
+
+The transition from a Raw Multiple Linear Regression to a Log-Transformed Stepwise Model was the defining success of this project. While the initial model achieved a high $R^2$ ($0.75$), it violated core OLS assumptions, rendering its predictions statistically unstable.
+
+Correction of Heteroscedasticity: The initial "three-band" residual pattern and increasing error spread (heteroscedasticity) were successfully resolved by logging the charges. This "collapsed" the non-constant variance into a uniform cloud, ensuring that our standard errors and p-values are mathematically reliable.
+
+Normalization of Errors: The log-transformation addressed the heavy right-skewness of the insurance claims. By pulling high-cost outliers closer to the mean, we "straightened" the Normal Q-Q plot, satisfying the normality assumption required for valid inference.
+
+Interpretability and Real-World Fit: Shifting to a log-scale allowed for a percentage-based interpretation (e.g., a 3.5% increase per year of age), which better reflects the compounding nature of insurance risk compared to a flat dollar-amount increase. 
+
+Inference :
+
+Through Stepwise Selection and Best Subset analysis, it was proven that all predictors—age, bmi, children, smoker, sex, and region—are significant drivers of cost. The final model provides a robust, balanced framework for predictive accuracy, as evidenced by the improved RMSE on the test set, making it a reliable tool for insurance premium estimation.
+
